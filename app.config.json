@@ -1,0 +1,36 @@
+{
+  "expo": {
+    "name": "WhoToAsk - Legal Assistant",
+    "slug": "whotoask",
+    "extra": {
+      "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "919532266925-rsi2ff0cq4q3rp1ejsr1l4snirqn2p6c.apps.googleusercontent.com",
+      "router": {},
+      "eas": {
+        "projectId": "05a70aae-1bce-4f31-9ef8-4752ef6d5f58"
+      }
+    },
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/iconn.png",
+    "scheme": "myapp",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single",
+      "favicon": "./assets/images/iconn.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-font",
+      "expo-web-browser"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "owner": "abhianantapalli"
+  }
+}
