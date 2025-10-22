@@ -1,0 +1,31 @@
+# Ignore virtual environments
+venv/
+myenv/
+myvenv/
+
+# Ignore Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ignore PyCxhale-specific output (adjust if necessary)
+.pycxhale/
+.pycxhale-cache/
+.pycxhale-output/
+cxhale.log
+
+# Ignore distribution and packaging
+build/
+dist/
+*.egg-info/
+
+# Ignore IDE/editor settings
+.vscode/
+.idea/
+
+# Ignore OS-generated files
+.DS_Store
+Thumbs.db
+
+# Optional: ignore environment variables or sec
+.env
