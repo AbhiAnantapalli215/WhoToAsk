@@ -93,7 +93,6 @@ export default function HomeScreen() {
 
             console.log(`--- First two lines of ${asset.name} ---`);
             console.log(firstTwoLines);
-            console.log('------------------------------------');
 
             filePreview += `\n\nFirst 2 lines:\n${firstTwoLines}`;
             initialMessage = `I uploaded "${asset.name}". Here are the first two lines:\n\n${firstTwoLines}\n\nCan you help me with this?`;

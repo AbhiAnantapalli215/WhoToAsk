@@ -1,14 +1,19 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
 import { Platform } from "react-native";
 import { getFirestore } from "firebase/firestore";
 
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+// Import Auth functions
+import { 
+  getAuth, 
+  initializeAuth, 
+  getReactNativePersistence 
+} from 'firebase/auth';
+
+// Import AsyncStorage for native persistence
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
 
 // Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY,
   authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN,
@@ -22,24 +27,18 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
+// Conditionally initialize Auth based on platform
 let auth;
 
-if (Platform.OS !== "web") {
-  try {
-    // require at runtime so web bundler doesn't try to resolve native-only modules
-    // build the module path dynamically so Metro won't attempt to resolve it during bundling
-    const AsyncStorage = require("@react-native-async-storage/async-storage").default;
-    const rnAuthPath = "firebase" + "/auth/react-native";
-    const { initializeAuth, getReactNativePersistence } = require(rnAuthPath);
-    auth = initializeAuth(app, {
-      persistence: getReactNativePersistence(AsyncStorage),
-    });
-  } catch (err) {
-    console.warn("Native auth persistence init failed, falling back to getAuth:", err);
-    auth = getAuth(app);
-  }
-} else {
-  // web fallback
+if (Platform.OS === 'web') {
+  // For web, use default in-memory persistence
   auth = getAuth(app);
+} else {
+  // For React Native, use AsyncStorage for persistence
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(ReactNativeAsyncStorage),
+  });
 }
+
+// Export the initialized services
 export { app, auth, db };

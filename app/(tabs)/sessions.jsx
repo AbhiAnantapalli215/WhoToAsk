@@ -195,7 +195,6 @@ export default function SessionsScreen() {
               WhoToAsk Legal - Session Transcript
             </div>
 
-            {/* FIXED: 'selectedSession' is just a string here, so we don't use .name */}
             <h3>Session Details</h3>
             <p class="session-details"><i>(Session ID: ${selectedSession})</i></p>
             <br/>
@@ -239,7 +238,7 @@ export default function SessionsScreen() {
 
       Alert.alert(
         'Success', 
-        'Email draft opened with PDF attached. Please review and send.'
+        'Session shared to the recipient successfully.'
       );
 
     } catch (err) {

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import {
   View,
   Text,
@@ -38,13 +38,14 @@ export default function AuthPage() {
   const [error, setError] = useState("");
 
   // Different redirect URIs for web vs mobile
-  const redirectUri = AuthSession.makeRedirectUri({
-    scheme: Platform.OS === 'web' ? undefined : 'myapp',
-    useProxy: Platform.OS !== 'web', // Use proxy only for mobile (Expo Go)
-  });
+  const redirectUri = useMemo(() => 
+    AuthSession.makeRedirectUri({
+      scheme: Platform.OS === 'web' ? undefined : 'myapp',
+      useProxy: Platform.OS !== 'web',
+    }),
+    []
+  );
 
-  console.log("=== Platform & Redirect URI ===");
-  console.log("Platform:", Platform.OS);
   console.log("Redirect URI:", redirectUri);
 
   // Configure Google Auth
@@ -78,7 +79,6 @@ export default function AuthPage() {
     const handleResponse = async () => {
       console.log("=== Google Auth Response ===");
       console.log("Type:", response.type);
-      console.log("Full response:", JSON.stringify(response, null, 2));
       
       if (response.type === "success") {
         setLoadingAuth(true);
