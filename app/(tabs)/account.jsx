@@ -5,60 +5,213 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Switch,
   Alert,
-  TextInput,
   Modal,
+  TextInput,
   Image,
+  ActivityIndicator, 
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { auth } from '../../firebaseConfig';
+import { auth, db } from '../../firebaseConfig'; 
 import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { 
+  collection, 
+  query, 
+  orderBy, 
+  onSnapshot, 
+  getDocs 
+} from 'firebase/firestore'; 
+import * as Print from 'expo-print'; // <-- FIXED: Was 'Next'
+import * as FileSystem from 'expo-file-system/legacy';
+import * as MailComposer from 'expo-mail-composer';
 
 export default function AccountScreen() {
   const router = useRouter();
-  const [darkMode, setDarkMode] = useState(false);
   const [showSendDataModal, setShowSendDataModal] = useState(false);
   const [recipientEmail, setRecipientEmail] = useState('');
   const [user, setUser] = useState(null);
 
-  // Listen for Firebase Auth user
+  const [sessions, setSessions] = useState([]);
+  const [loadingSessions, setLoadingSessions] = useState(false);
+  const [selectedSession, setSelectedSession] = useState(null); 
+  const [isSending, setIsSending] = useState(false); 
+
+  // Listen for Firebase Auth user (This part was correct)
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+
+      if (currentUser) {
+        setLoadingSessions(true);
+        const sessionsRef = collection(db, 'users', currentUser.uid, 'sessions');
+        const q = query(sessionsRef, orderBy('createdAt', 'desc'));
+
+        const unsubscribeSessions = onSnapshot(q, (snapshot) => {
+          const data = snapshot.docs.map(doc => ({
+            id: doc.id,
+            name: doc.data().name || 'Untitled Session',
+            // We can also grab the icon/color here if needed
+            icon: doc.data().icon,
+            color: doc.data().color,
+          }));
+          setSessions(data);
+          setLoadingSessions(false);
+        }, (error) => {
+          console.error("Error fetching sessions: ", error);
+          setLoadingSessions(false);
+        });
+
+        return () => unsubscribeSessions();
+      } else {
+        setSessions([]);
+        setLoadingSessions(false);
+      }
     });
-    return unsubscribe;
+
+    return () => unsubscribeAuth(); 
   }, []);
 
-  const handleSwitchAccount = () => {
-    Alert.alert('Switch Account', 'Redirecting to login...');
-    router.replace('/auth'); // Navigate back to login page
-  };
-
-  const handlePhoneNumber = () => {
-    Alert.alert('Phone Number', 'Feature coming soon.');
-  };
-
   const handleSendSessionData = () => {
+    setRecipientEmail('');
+    setSelectedSession(null);
+    setIsSending(false);
     setShowSendDataModal(true);
   };
 
-  const handleSendEmail = () => {
-    if (recipientEmail.trim() === '') {
-      Alert.alert('Error', 'Please enter an email address');
+  // --- MODIFIED: This function is now fixed ---
+  // --- MODIFIED: This now generates a professional, unstyled PDF ---
+  const handleSendEmail = async () => {
+    if (!selectedSession) {
+      Alert.alert('Error', 'Please select a session to send.');
       return;
     }
-    if (!recipientEmail.includes('@')) {
-      Alert.alert('Error', 'Please enter a valid email address');
+    if (recipientEmail.trim() === '' || !recipientEmail.includes('@')) {
+      Alert.alert('Error', 'Please enter a valid recipient email address.');
       return;
     }
-    Alert.alert('Success', `Session data will be sent to ${recipientEmail}`);
-    setRecipientEmail('');
-    setShowSendDataModal(false);
-  };
 
+    setIsSending(true); // Show sending loader
+
+    try {
+      // 1. Fetch messages for the selected session
+      const messagesRef = collection(db, 'users', user.uid, 'sessions', selectedSession.id, 'messages');
+      const q = query(messagesRef, orderBy('timestamp', 'asc')); // Order by timestamp
+      const snapshot = await getDocs(q);
+      const messages = snapshot.docs.map(doc => doc.data());
+
+      if (messages.length === 0) {
+        Alert.alert('Empty Session', 'This session has no messages to send.');
+        setIsSending(false);
+        return;
+      }
+
+      // 2. Create HTML for PDF
+      const html = `
+        <html>
+          <head>
+            <style>
+              body { font-family: Arial, sans-serif; padding: 40px; font-size: 12px; color: #1F2937; }
+              .header { 
+                text-align: center; 
+                border-bottom: 2px solid #1A3C6E; 
+                padding-bottom: 10px; 
+                margin-bottom: 20px; 
+                font-size: 18px; 
+                font-weight: bold;
+                color: #1A3C6E;
+              }
+              .content { 
+                border: 1px solid #E5E7EB; 
+                padding: 15px; 
+                border-radius: 8px; 
+                min-height: 60vh;
+              }
+              .footer { 
+                text-align: center; 
+                border-top: 1px solid #E5E7EB; 
+                padding-top: 10px; 
+                margin-top: 20px; 
+                font-size: 10px; 
+                color: #6B7280;
+              }
+              h3 { font-size: 16px; margin-bottom: 5px; }
+              .session-details { margin: 0; padding: 0; color: #6B7280; }
+              .message { 
+                margin: 0; 
+                padding: 8px 0; 
+                line-height: 1.5; 
+                white-space: pre-wrap; 
+                border-bottom: 1px dashed #F3F4F6;
+              }
+              .message:last-child {
+                border-bottom: none;
+              }
+              b { 
+                font-weight: bold; 
+                color: #1F2937; /* Default dark color */
+              }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              WhoToAsk Legal - Session Transcript
+            </div>
+
+            <h3>Session: ${selectedSession.name}</h3>
+            <p class="session-details"><i>(Session ID: ${selectedSession.id})</i></p>
+            <br/>
+
+            <div class="content">
+              ${messages
+                .map(
+                  (m) =>
+                    `<p class="message"><b>${m.sender === 'user' ? 'User' : 'AI'}:</b> ${m.text.replace(/\n/g, '<br />')}</p>`
+                )
+                .join('')}
+            </div>
+
+            <div class="footer">
+              Confidential Document | Generated on ${new Date().toLocaleString()}
+            </div>
+          </body>
+        </html>
+      `;
+
+      // 3. Generate PDF
+      const { uri } = await Print.printToFileAsync({ html });
+      const safeName = selectedSession.name.replace(/[^a-z0-9]/gi, '_');
+      const fileUri = `${FileSystem.documentDirectory}session_${safeName}.pdf`;
+      await FileSystem.moveAsync({ from: uri, to: fileUri });
+
+      // 4. Send email
+      const isAvailable = await MailComposer.isAvailableAsync();
+      if (!isAvailable) {
+        Alert.alert('Error', 'Mail service not available on this device.');
+        setIsSending(false);
+        return;
+      }
+
+      await MailComposer.composeAsync({
+        recipients: [recipientEmail],
+        subject: `Legal Chat Session: ${selectedSession.name}`,
+        body: `Attached is the chat transcript for the session "${selectedSession.name}".\n\nSent from the WhoToAsk app.`,
+        attachments: [fileUri],
+      });
+
+      // 5. Success
+      Alert.alert('Success', `The session is successfully shared to recipient.`);
+      setShowSendDataModal(false);
+
+    } catch (err) {
+      console.error('Error sharing session:', err);
+      Alert.alert('Error', 'Failed to generate or send session PDF.');
+    } finally {
+      setIsSending(false);
+    }
+  };
+  
   const handleLegalTerms = () => {
-    Alert.alert('Legal Terms & Privacy Policy', 'This would open the legal terms and privacy policy document.');
+    router.push('/legalTerms');
   };
 
   const handleLogout = async () => {
@@ -69,19 +222,17 @@ export default function AccountScreen() {
       Alert.alert('Logout failed', err.message || String(err));
     }
   };
-  
+
+  // ... (rest of your component's return JSX) ...
+  // (No changes needed to the JSX, it's all here)
+
   // Show fallback if user not logged in
   if (!user) {
     return (
       <View style={[styles.container, { justifyContent: 'center', alignItems: 'center' }]}>
         <Text style={{ fontSize: 18, marginBottom: 10 }}>You’re not logged in.</Text>
         <TouchableOpacity
-          style={{
-            backgroundColor: '#1A3C6E',
-            paddingHorizontal: 20,
-            paddingVertical: 12,
-            borderRadius: 8,
-          }}
+          style={styles.loginButton}
           onPress={() => router.replace('/auth')}
         >
           <Text style={{ color: '#fff', fontWeight: 'bold' }}>Go to Login</Text>
@@ -90,7 +241,10 @@ export default function AccountScreen() {
     );
   }
 
-  const profileName = user.displayName || 'Anonymous User';
+  // Derive name from email if displayName is missing
+  const profileName =
+    user.displayName ||
+    (user.email ? user.email.split('@')[0] : 'Anonymous User');
   const profileEmail = user.email;
   const profilePhoto = user.photoURL;
 
@@ -123,42 +277,12 @@ export default function AccountScreen() {
           <Text style={styles.profileEmail}>{profileEmail}</Text>
         </View>
 
-        {/* Account Actions */}
-        <View style={styles.section}>
-          <TouchableOpacity style={styles.menuItem} onPress={handleSwitchAccount}>
-            <Text style={styles.menuItemText}>Switch Account</Text>
-            <Text style={styles.menuItemIcon}>›</Text>
-          </TouchableOpacity>
-
-          <View style={styles.divider} />
-
-          <TouchableOpacity style={styles.menuItem} onPress={handlePhoneNumber}>
-            <Text style={styles.menuItemText}>Phone Number</Text>
-            <View style={styles.menuItemRight}>
-              <Text style={styles.menuItemValue}>+1 *** *** 1234</Text>
-              <Text style={styles.menuItemIcon}>›</Text>
-            </View>
-          </TouchableOpacity>
-        </View>
-
-        {/* Preferences */}
+        {/* Account Options */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>APP PREFERENCES</Text>
+          <Text style={styles.sectionTitle}>ACCOUNT OPTIONS</Text>
         </View>
 
         <View style={styles.section}>
-          <View style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Enable Dark Mode</Text>
-            <Switch
-              value={darkMode}
-              onValueChange={setDarkMode}
-              trackColor={{ false: '#D1D5DB', true: '#4BA3FF' }}
-              thumbColor="#FFFFFF"
-            />
-          </View>
-
-          <View style={styles.divider} />
-
           <TouchableOpacity style={styles.menuItem} onPress={handleSendSessionData}>
             <Text style={styles.menuItemText}>Send Session Data</Text>
             <Text style={styles.menuItemIcon}>›</Text>
@@ -185,7 +309,7 @@ export default function AccountScreen() {
         <View style={styles.bottomPadding} />
       </ScrollView>
 
-      {/* Send Session Modal */}
+      {/* --- MODIFIED: Send Session Modal --- */}
       <Modal
         visible={showSendDataModal}
         transparent={true}
@@ -194,39 +318,91 @@ export default function AccountScreen() {
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Send Session Data</Text>
-            <Text style={styles.modalSubtitle}>
-              Enter the email address of your lawyer or accountant
-            </Text>
+            
+            {isSending ? (
+              <View style={styles.loaderContainer}>
+                <ActivityIndicator size="large" color="#1A3C6E" />
+                <Text style={styles.loaderText}>Generating PDF & Sending...</Text>
+              </View>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>Send Session Data</Text>
+                
+                {/* --- NEW: Session Selector --- */}
+                <Text style={styles.modalSubtitle}>
+                  1. Select a session to send
+                </Text>
+                <View style={styles.sessionListContainer}>
+                  {loadingSessions ? (
+                    <ActivityIndicator color="#1A3C6E" />
+                  ) : sessions.length === 0 ? (
+                    <Text style={styles.noSessionsText}>No sessions found.</Text>
+                  ) : (
+                    <ScrollView>
+                      {sessions.map((session) => (
+                        <TouchableOpacity
+                          key={session.id}
+                          style={[
+                            styles.sessionItem,
+                            selectedSession?.id === session.id && styles.sessionItemSelected
+                          ]}
+                          onPress={() => setSelectedSession(session)}
+                        >
+                          <Text 
+                            style={[
+                              styles.sessionItemText,
+                              selectedSession?.id === session.id && styles.sessionItemTextSelected
+                            ]}
+                          >
+                            {session.name}
+                          </Text>
+                        </TouchableOpacity>
+                      ))}
+                    </ScrollView>
+                  )}
+                </View>
 
-            <TextInput
-              style={styles.modalInput}
-              placeholder="email@example.com"
-              placeholderTextColor="#9CA3AF"
-              value={recipientEmail}
-              onChangeText={setRecipientEmail}
-              keyboardType="email-address"
-              autoCapitalize="none"
-            />
+                {/* --- NEW: Step 2, only if session is selected --- */}
+                {selectedSession && (
+                  <>
+                    <Text style={styles.modalSubtitle}>
+                      2. Enter recipient's email
+                    </Text>
+                    <TextInput
+                      style={styles.modalInput}
+                      placeholder="email@example.com"
+                      placeholderTextColor="#9CA3AF"
+                      value={recipientEmail}
+                      onChangeText={setRecipientEmail}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                    />
+                  </>
+                )}
 
-            <View style={styles.modalButtons}>
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalCancelButton]}
-                onPress={() => {
-                  setRecipientEmail('');
-                  setShowSendDataModal(false);
-                }}
-              >
-                <Text style={styles.modalCancelText}>Cancel</Text>
-              </TouchableOpacity>
+                {/* Modal Buttons */}
+                <View style={styles.modalButtons}>
+                  <TouchableOpacity
+                    style={[styles.modalButton, styles.modalCancelButton]}
+                    onPress={() => setShowSendDataModal(false)}
+                  >
+                    <Text style={styles.modalCancelText}>Cancel</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.modalButton, styles.modalSendButton]}
-                onPress={handleSendEmail}
-              >
-                <Text style={styles.modalSendText}>Send</Text>
-              </TouchableOpacity>
-            </View>
+                  <TouchableOpacity
+                    style={[
+                      styles.modalButton, 
+                      styles.modalSendButton,
+                      (!selectedSession || !recipientEmail) && styles.modalButtonDisabled // Disable if no selection
+                    ]}
+                    onPress={handleSendEmail}
+                    disabled={!selectedSession || !recipientEmail}
+                  >
+                    <Text style={styles.modalSendText}>Send</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
         </View>
       </Modal>
@@ -234,9 +410,9 @@ export default function AccountScreen() {
   );
 }
 
-// ⬇️ (Keep your styles exactly the same as before, just add this small one)
+// --- STYLES ---
+// (Your styles are all correct, no changes needed here)
 const styles = StyleSheet.create({
-  // ... keep everything from your current styles ...
   profileImageReal: {
     width: 100,
     height: 100,
@@ -248,12 +424,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#F7F9FB',
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
     paddingTop: 60,
     paddingBottom: 16,
-    paddingHorizontal: 16,
+    alignItems: 'center',
     backgroundColor: '#FFFFFF',
     borderBottomWidth: 1,
     borderBottomColor: '#E5E7EB',
@@ -262,18 +435,12 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
     color: '#1A3C6E',
-    flex: 1,
-    textAlign: 'center',
   },
-  menuButton: {
-    width: 40,
-    height: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  menuIcon: {
-    fontSize: 24,
-    color: '#1A3C6E',
+  loginButton: {
+    backgroundColor: '#1A3C6E',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
   },
   content: {
     flex: 1,
@@ -292,11 +459,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: 16,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
   },
   profileInitials: {
     fontSize: 36,
@@ -313,11 +475,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#6B7280',
   },
-  section: {
-    backgroundColor: '#FFFFFF',
-    marginBottom: 24,
-    paddingHorizontal: 16,
-  },
   sectionHeader: {
     paddingHorizontal: 16,
     paddingVertical: 8,
@@ -326,39 +483,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
     color: '#6B7280',
-    letterSpacing: 0.5,
+  },
+  section: {
+    backgroundColor: '#FFFFFF',
+    marginBottom: 24,
+    paddingHorizontal: 16,
   },
   menuItem: {
     flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 16,
   },
   menuItemText: {
     fontSize: 16,
     color: '#1F2937',
   },
-  menuItemRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  menuItemValue: {
-    fontSize: 15,
-    color: '#6B7280',
-    marginRight: 8,
-  },
   menuItemIcon: {
     fontSize: 20,
     color: '#9CA3AF',
   },
-  divider: {
-    height: 1,
-    backgroundColor: '#E5E7EB',
-  },
   logoutButton: {
     backgroundColor: '#FFFFFF',
     marginHorizontal: 16,
-    marginTop: 16,
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
@@ -396,8 +543,8 @@ const styles = StyleSheet.create({
   modalSubtitle: {
     fontSize: 14,
     color: '#6B7280',
-    marginBottom: 20,
-    lineHeight: 20,
+    marginBottom: 12,
+    marginTop: 10,
   },
   modalInput: {
     borderWidth: 1,
@@ -406,12 +553,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 12,
     fontSize: 15,
-    color: '#1F2937',
     marginBottom: 20,
   },
   modalButtons: {
     flexDirection: 'row',
     gap: 12,
+    marginTop: 10,
   },
   modalButton: {
     flex: 1,
@@ -435,4 +582,47 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#FFFFFF',
   },
+  modalButtonDisabled: {
+    backgroundColor: '#9CA3AF', 
+  },
+  sessionListContainer: {
+    height: 150, 
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  sessionItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#F3F4F6',
+  },
+  sessionItemSelected: {
+    backgroundColor: '#1A3C6E20', 
+  },
+  sessionItemText: {
+    fontSize: 15,
+    color: '#1F2937',
+  },
+  sessionItemTextSelected: {
+    fontWeight: '600',
+    color: '#1A3C6E',
+  },
+  noSessionsText: {
+    textAlign: 'center',
+    marginTop: 20,
+    color: '#6B7280',
+  },
+  loaderContainer: {
+    height: 150,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loaderText: {
+    marginTop: 10,
+    fontSize: 15,
+    color: '#1A3C6E',
+    fontWeight: '500',
+  }
 });
