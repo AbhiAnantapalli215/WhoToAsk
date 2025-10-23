@@ -2,6 +2,7 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 import { Platform } from "react-native";
+import { getFirestore } from "firebase/firestore";
 
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
@@ -19,6 +20,7 @@ const firebaseConfig = {
 
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 let auth;
 
@@ -40,5 +42,4 @@ if (Platform.OS !== "web") {
   // web fallback
   auth = getAuth(app);
 }
-
-export { app, auth };
+export { app, auth, db };
