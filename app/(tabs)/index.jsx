@@ -395,8 +395,8 @@ export default function HomeScreen() {
   const [cameraPermission, requestCameraPermission] = ImagePicker.useCameraPermissions();
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false); // <-- ADDED: Loading state
-  // const BACKEND_URL = "https://your-ngrok-url.ngrok.io";
-  const BACKEND_URL = "http://localhost:8000";
+  const BACKEND_URL = "https://ennuyant-uncomplaisantly-mozelle.ngrok-free.dev";
+  // const BACKEND_URL = "http://localhost:8000";
 
   // --- MODIFIED: Added backend /upload call ---
   const handleTakePhoto = async () => {

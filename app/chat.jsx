@@ -305,9 +305,9 @@ export default function ChatScreen() {
   const [loading, setLoading] = useState(true);
   const [currentSessionId, setCurrentSessionId] = useState(params.sessionId); // Will hold the ID
   const user = auth.currentUser;
-  // const BACKEND_URL = "https://your-ngrok-url.ngrok.io";
+  const BACKEND_URL = "https://ennuyant-uncomplaisantly-mozelle.ngrok-free.dev";
   // const BACKEND_URL = "https://dg2jnd5g-3510.uks1.devtunnels.ms/";
-  const BACKEND_URL = "http://localhost:8000";
+  // const BACKEND_URL = "http://localhost:8000";
 // --- MODIFIED: This function now calls the /query endpoint ---
   const triggerAIResponse = async (text, sessionId) => {
     try {
